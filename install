@@ -1,0 +1,313 @@
+######################################################
+#
+# INSTALL - woda installation program
+#
+# USAGE:
+#
+# 	perl install
+#	
+#	Install WODA Web Oriented Database Database
+#
+#	perl install -u
+#
+#	Uninstalls WODA
+#
+######################################################
+
+
+eval "umask 0";		# DOS Perl hates it, thus eval.
+$SET = 'install.cfg';
+$PERL = $^X;
+$PERL =~ tr|\\|\/|;
+
+if ($PERL !~ m|/|) {
+	$PERL = '/usr/local/bin/perl';
+	$PERL = '/usr/bin/perl' unless -e $PERL;
+	unless (-e $PERL) {
+	    print <<EOM;
+
+ERROR:
+
+Please start this script so that
+you specify full path to perl e.g.:
+
+/usr/local/bin/perl install
+
+EOM
+	    exit;
+	}
+}
+
+if ($ARGV[0] eq '-u') {
+
+	if (-e $SET) {
+    	    do $SET;
+	}
+
+	print <<EOM;
+This will uninstall the previous WODA installation.
+It will remove the following directories and files:
+
+$WODA
+$ROOT/woda
+$CGI/test.cgi
+$CGI/demo.cgi
+
+Press ENTER to proceed:
+EOM
+
+	$x = <STDIN>;
+	do rmDir ("$WODA");
+	do rmDir ("$ROOT/woda");
+	unlink ("$CGI/test.cgi");
+	unlink ("$CGI/demo.cgi");
+	exit;
+}
+
+
+
+print <<EOM;
+
+WODA INSTALL:
+
+This will install WODA on your system. First, it will ask some questions about
+where and how to install it. The default values will be shown in [brackets]!
+Use forward slashes (/), absolute pathnames (staring with /) and no trailing
+slash!
+
+Perl was found at $PERL.
+
+Press ENTER to continue.
+EOM
+
+$x = <STDIN>;
+
+$WODA = '/usr/local/woda';
+$CGI = '/usr/local/www/cgi';
+$ROOT = '/usr/local/www/htdocs';
+
+if (-e $SET) {
+    do $SET;
+}
+
+print "\nWhere to install WODA program library\n[$WODA]:";
+$wodaDir = <STDIN>;
+chop($wodaDir);
+$wodaDir = $wodaDir || $WODA;
+
+print "\nIn which directory should the demo cgi
+script be installed. This depends on the setup of
+your Web server. The cgi-bin directory
+(wherever it is) is a safe bet) [$CGI]:";
+$cgiDir = <STDIN>;
+chop($cgiDir);
+$cgiDir = $cgiDir || $CGI;
+
+print "\nWhat is the document root directory of
+your web server.\n[$ROOT]:";
+$rootDir = <STDIN>;
+chop($rootDir);
+$rootDir = $rootDir || $ROOT;
+
+print "\nWhat is the administrator password.\n[$PASS]:";
+$pass = <STDIN>;
+chop($pass);
+$pass = $pass || $PASS;
+
+
+$dataDir = "$rootDir/woda/data";
+$iconDir = "$rootDir/woda/icons";
+
+if ("$wodaDir $cgiDir $iconDir" =~ m/:|\\/) {
+	print "Error: Don't enter drive letters and back slashes.";
+        <STDIN>;
+	exit;
+}
+
+print <<EOM;
+
+Ready to install:
+	WODA to $wodaDir
+	CGI demos to $cgiDir
+	ICONS to $iconDir
+	DATA to $dataDir
+
+Press N to abort or ENTER to install:
+
+EOM
+
+$x = <STDIN>;
+
+if ($x =~ m/n/i) {
+    print "Aborted ...\n";
+    exit;
+}
+
+print "\nFirst I'll save your settings for future use\n";
+open (H,">$SET") || warn "Could not write to $SET file";
+print H <<EOM;
+\$WODA = '$wodaDir';
+\$CGI =  '$cgiDir';
+\$ROOT = '$rootDir';
+\$PASS = '$pass';
+EOM
+close(H);
+
+print "\nLet's make the directories ...\n";
+do makeDir($wodaDir);
+do makeDir($cgiDir);
+do makeDir($iconDir);
+do makeDir($dataDir);
+
+print "\nLet's copy the files ...\n";
+
+do copyDir ("woda",$wodaDir);
+do copyDir ("cgi",$cgiDir);
+do copyDir ("gif",$iconDir);
+
+print "\nOK, now lets configure examples for your system for
+the provided settings and $woda library ...\n";
+
+foreach $file (@cgis) {
+    print "Fixing $file\n";
+    open (H,"$file");
+    binmode(H);
+    @rows = <H>;
+    close(H);
+    $all = join('',@rows);
+    $*=1;
+    $all =~ s|woda(\-?[a-z]{2})\.p.|$woda|g;			# wodauk.pm or wodauk.pl
+    $all =~ s|/usr/local/woda|$wodaDir|g;			# location of woda
+    $all =~ s|/usr/local/www/htdocs/woda/data|$dataDir|g;	# location of data (demo only)
+    $all =~ s|!/usr/local/bin/perl|!$PERL|g;			# location of Perl
+    $all =~ s|/usr/local/www/cgi|$cgiDir|g;			# cgi directory (for TESTCGI only)
+    $all =~ s|zebra|$pass|g;					# password
+
+    open (H,">$file") || die "Cound not open $file for writing\n";
+    binmode(H);
+    print H $all;
+    close(H);
+}
+
+print <<EOM;
+
+Setup is complete. You might wish to look around
+'sub mainConfig' in the *.pl or *.pm file in 
+$wodaDir to verify the configuration.
+
+But generally it should work. Just call the URL test.cgi
+and then demo.cgi with your web browser.
+
+Press ENTER to exit INSTALL.
+EOM
+
+<STDIN>;
+
+sub makeDir {
+	local ($dir) = @_;
+	# print "Making $dir\n";
+
+	@dirs = split (/\//,$dir);
+
+	for ($i=1;$i<=$#dirs;$i++) {
+	     $dir = join ('/',@dirs[0..$i]);
+	     $dir = "/$dir";
+	     $dir =~ s|//|/|g;	# just in case
+	     if (-d $dir) {
+		next;
+	     } else {
+	        if (mkdir ($dir,0777)) {
+		   print "Made $dir\n";
+		} else {
+		   print "FAILED TO MAKE $dir\n";
+		}
+	     }
+	}
+}
+
+sub copyDir {
+
+	local ($from,$to) = @_;
+
+	opendir(D,$from);
+	@files = readdir(D);
+	closedir(D);
+
+ 	return if $#files <0;
+
+	while (@files) {
+	    $file = shift(@files);
+	    next if $file eq '';
+	    next if $file =~ m/^\./;
+
+	    if ($file =~ m/^woda\-?([a-z]{2}).*p(.)$/) {
+		$woda = $file;
+		push (@cgis,"$to/$file");
+	    }
+
+	    if ($file =~ m/cgi$/) {
+		push (@cgis,"$to/$file");
+	    }
+
+	    if ($file =~ m/^..$/) {	# -d does not work on DOS !
+		mkdir ("$to/$file",0777);
+		opendir (D,"$from/$file");
+		@more = readdir(D);
+		closedir(D);
+		foreach $m (@more) {
+	    	    next if $m =~ m/^\./;
+		    push(@files,"$file/$m");
+		}
+	    } else {
+		do copyFile ("$from/$file","$to/$file");
+	    }
+	}
+}
+
+sub rmDir {
+
+	local ($dir) = @_;
+	local (@files,$file);
+
+	opendir(D,$dir);
+	@files = readdir(D);
+	closedir(D);
+
+ 	return if $#files <0;
+
+	while (@files) {
+	    $file = shift(@files);
+	    next if $file eq '';
+	    next if $file =~ m/^\./;
+	    if (-d "$dir/$file") {
+		print "rmdir $dir/$file\n";
+		do rmDir ("$dir/$file");
+		next;
+	    }
+	    print "deleting $dir/$file\n";
+	    unlink ("$dir/$file") ||  warn "Cannot remove $dir/$file\n";;
+	}
+
+	print "deleting $dir\n";
+	rmdir ($dir) || warn "Cannot remove $dir\n";
+}
+
+sub copyFile {
+
+	local ($from, $to) = @_;
+
+	open (H,"$from") || die "Cannot open $from for reading\n";
+	binmode(H);
+	@rows=<H>;
+	close(H);
+	open (H,">$to") || die "Cannot open $to for writing\n";
+	binmode(H);
+	print H @rows;
+	close(H);
+	print "Copied $from to $to\n";
+	if (-x '/bin/chmod' || -x '/usr/bin/chmod') { 	# on UNIX only ...
+	    `chmod 644 $to`;				# make it readable
+	    `chmod +x $to` if $to =~ m/cgi$|pl$|pm$/;	# cgi, pl and pm should be executable
+	}
+}
+
